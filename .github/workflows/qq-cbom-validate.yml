@@ -1,0 +1,40 @@
+name: qq-cbom-validate
+on:
+  workflow_call: {}
+
+jobs:
+  cbom-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: pip install --upgrade cyclonedx-python-lib jsonschema
+      - name: Validate CBOMs (CycloneDX 1.7)
+        shell: bash
+        run: |
+          python3 <<'PYEOF'
+          import json, sys, glob
+          from pathlib import Path
+          import jsonschema, cyclonedx
+          schema_dir = Path(cyclonedx.__file__).parent / "schema" / "_res"
+          candidates = sorted(schema_dir.glob("bom-1.7*.schema.json"))
+          if not candidates:
+              print("ERROR: no CycloneDX 1.7 schema found"); sys.exit(2)
+          schema = json.loads(candidates[0].read_text())
+          validator = jsonschema.Draft7Validator(schema)
+          files = sorted(glob.glob("**/*.cbom.json", recursive=True))
+          fails = 0
+          for f in files:
+              bom = json.loads(Path(f).read_text())
+              errs = list(validator.iter_errors(bom))
+              if errs:
+                  fails += 1; print(f"FAIL: {f} ({len(errs)} error(s))")
+                  for e in errs[:3]: print(f"  - {e.message[:160]}")
+              else:
+                  print(f"PASS: {f}")
+          print(f"checked: {len(files)}, failed: {fails}")
+          sys.exit(0 if fails == 0 else 1)
+          PYEOF

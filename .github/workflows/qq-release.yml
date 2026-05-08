@@ -1,0 +1,52 @@
+name: qq-release
+on:
+  workflow_call:
+    inputs:
+      tag:
+        type: string
+        required: true
+    secrets:
+      release-token:
+        required: false
+
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install --upgrade cyclonedx-bom
+      - name: Generate self CBOM (CycloneDX 1.7)
+        run: |
+          mkdir -p dist
+          cyclonedx-py environment --output-format json --schema-version 1.7 --output-file dist/self.cbom.json || \
+          cyclonedx-py requirements --output-format json --schema-version 1.7 --output-file dist/self.cbom.json || true
+      - name: Generate CHANGELOG
+        run: |
+          PREV=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+          if [ -n "$PREV" ]; then
+            git log --pretty=format:"- %s (%h)" "$PREV"..HEAD > dist/CHANGELOG.md
+          else
+            git log --pretty=format:"- %s (%h)" > dist/CHANGELOG.md
+          fi
+      - name: Sigstore sign artifacts
+        uses: sigstore/gh-action-sigstore-python@v3.0.0
+        with:
+          inputs: dist/self.cbom.json
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.tag }}
+          body_path: dist/CHANGELOG.md
+          files: |
+            dist/self.cbom.json
+            dist/self.cbom.json.sigstore

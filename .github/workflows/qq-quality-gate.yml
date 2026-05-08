@@ -1,0 +1,65 @@
+name: qq-quality-gate
+on:
+  workflow_call:
+    inputs:
+      python-versions:
+        type: string
+        default: '["3.10","3.11","3.12","3.13"]'
+      os-list:
+        type: string
+        default: '["ubuntu-latest","macos-latest","windows-latest"]'
+      run-mypy:
+        type: boolean
+        default: true
+      coverage-threshold:
+        type: number
+        default: 85
+
+permissions:
+  contents: read
+
+jobs:
+  lint-test:
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ${{ fromJSON(inputs.python-versions) }}
+        os: ${{ fromJSON(inputs.os-list) }}
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - run: pip install --upgrade pip
+      - name: Install
+        run: |
+          if [ -f pyproject.toml ]; then pip install -e ".[dev]" || pip install -e .; fi
+        shell: bash
+      - name: ruff
+        if: matrix.os != 'windows-latest'
+        run: ruff check .
+      - name: mypy
+        if: ${{ inputs.run-mypy }}
+        shell: bash
+        run: |
+          if [ -d src ]; then mypy src; else mypy . || true; fi
+      - name: pytest
+        shell: bash
+        run: |
+          if [ -d tests ]; then
+            pytest -q --cov=. --cov-fail-under=${{ inputs.coverage-threshold }}
+          fi
+
+  brand-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          if [ -f .github/scripts/brand-lint.sh ]; then
+            bash .github/scripts/brand-lint.sh .
+          elif [ -f scripts/brand-lint.sh ]; then
+            bash scripts/brand-lint.sh .
+          else
+            echo "brand-lint.sh not found; vendor it at .github/scripts/brand-lint.sh"; exit 2
+          fi
