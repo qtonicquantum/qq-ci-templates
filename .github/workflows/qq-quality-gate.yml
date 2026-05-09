@@ -43,7 +43,7 @@ jobs:
         if: ${{ inputs.run-mypy }}
         shell: bash
         run: |
-          if [ -d src ]; then mypy src; else mypy . || true; fi
+          if [ -d src ]; then mypy src; else echo "::warning ::no src/ directory — skipping mypy (consumer repo should adopt src/ layout for type-checking)"; fi
       - name: pytest
         shell: bash
         run: |
